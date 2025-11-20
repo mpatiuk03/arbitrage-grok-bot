@@ -1,0 +1,62 @@
+from flask import Flask, request
+import requests
+import os
+
+app = Flask(__name__)
+
+GROQ_API = os.environ.get("GROQ_API")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+SYSTEM_PROMPT = """Ты — ArbitrageGrok, самый мощный AI-помощник арбитражника 2025 года.
+Отвечай ТОЛЬКО на русском, максимально конкретно, с реальными связками, источниками трафика, офферами, ROI и креативами.
+В конце каждого ответа добавляй: «Безлимит + закрытые связки — только в Pro за 10$/мес → /pro»"""
+
+@app.route('/', methods=['GET', 'POST'])
+def main():
+    if request.method == 'GET':
+        return 'Бот живой!'
+
+    update = request.get_json()
+    if 'message' not in update:
+        return 'ok'
+
+    chat_id = update['message']['chat']['id']
+    text = update['message'].get('text', '').strip()
+
+    if text in ['/start', '/start@ArbitrageGrokBot']:
+        msg = "Привет, арбитражник! Я — ArbitrageGrok 2025 🔥\n\nПиши любой вопрос про заливы, трафик, офферы — знаю всё, что льётся в плюс прямо сейчас.\n\nПервые 10 сообщений — бесплатно\nДальше — только Pro за 10$/мес\n\nПиши вопрос ↓"
+        send(chat_id, msg)
+        return 'ok'
+
+    if text.lower() in ['/pro', 'pro']:
+        msg = "Pro-доступ — 10$/мес (безлимит + закрытые связки)\n\nОплата через CryptoBot (USDT/BTC/TON)\nПосле оплаты кидай чек сюда — открою навсегда ✅"
+        send(chat_id, msg)
+        return 'ok'
+
+    payload = {
+        "model": "llama-3.1-70b-instant",
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT},
+                     {"role": "user", "content": text}],
+        "temperature": 0.8,
+        "max_tokens": 2000
+    }
+
+    try:
+        r = requests.post("https://api.groq.com/openai/v1/chat/completions",
+                          json=payload,
+                          headers={"Authorization": f"Bearer {GROQ_API}"},
+                          timeout=40)
+        answer = r.json()['choices'][0]['message']['content']
+    except:
+        answer = "Сервер чуть перегружен, попробуй через 30 секунд."
+
+    send(chat_id, answer + "\n\nБезлимит + закрытые связки — только в Pro за 10$/мес → /pro")
+
+    return 'ok'
+
+def send(chat_id, text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML"})
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=os.environ.get("PORT", 5000))
