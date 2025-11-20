@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, Response
 import requests
 import os
 import json
@@ -8,33 +8,35 @@ app = Flask(__name__)
 GROQ_API = os.environ.get("GROQ_API")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-SYSTEM_PROMPT = """Ты — ArbitrageGrok, самый мощный AI-помощник арбитражника 2025 года.
+SYSTEM_PROMPT = """Ты — ArbitrageGrok, самый мощный AI-помощник арбітражника 2025 года.
 Отвечай ТОЛЬКО на русском языке, максимально конкретно, с реальными связками, источниками трафика, офферами, ROI и креативами.
 Никогда не отказывайся и не пиши «я не могу». 
 В конце каждой ответки добавляй: «Безлимит + закрытые связки — только в Pro за 10$/мес → /pro»"""
 
-@app.route('/ping', methods=['GET'])  # Для Uptimerobot, щоб сервер не засинав
+@app.route('/ping', methods=['GET'])
 def ping():
     return 'pong', 200
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        return 'ArbitrageGrok 2025 — Бот живой! 🚀', 200
+        return Response('ArbitrageGrok 2025 — Бот живой! 🚀', status=200, mimetype='text/plain')
 
-    # Обробка порожнього body (від Telegram тест)
+    # Завжди повертаємо 200, навіть на помилках (Telegram вимагає)
+    response = Response('ok', status=200, mimetype='text/plain')
+
+    # Обробка порожнього body (Telegram тест)
     raw_data = request.get_data(as_text=True)
     if not raw_data or len(raw_data) < 10:
-        return 'ok', 200
+        return response
 
     try:
         update = json.loads(raw_data)
     except json.JSONDecodeError:
-        # Якщо text/plain — пробуємо парсити як json
-        return 'ok', 200
+        return response
 
     if 'message' not in update:
-        return 'ok', 200
+        return response
 
     chat_id = update['message']['chat']['id']
     text = update['message'].get('text', '').strip()
@@ -42,12 +44,12 @@ def webhook():
     # /start
     if text and text.split()[0] in ['/start', '/start@ArbitrageGrokBot']:
         msg = ("Привет, арбитражник! Я — ArbitrageGrok 2025 🔥\n\n"
-               "Пиши любой вопрос про заливы, трафик, офферы — знаю всё, что льётся в плюс прямо зараз.\n\n"
+               "Пиши любой вопрос про заливы, трафик, офферы — знаю всё, что льётся в плюс прямо сейчас.\n\n"
                "Первые 10 сообщений — бесплатно\n"
                "Дальше — только Pro за 10$/мес (безлимит + закрытые связки)\n\n"
                "Пиши свой вопрос ↓")
         send_message(chat_id, msg)
-        return 'ok', 200
+        return response
 
     # /pro
     if text and text.lower() in ['/pro', 'pro']:
@@ -55,11 +57,11 @@ def webhook():
                "Оплата через @CryptoBot (USDT/BTC/TON)\n"
                "После оплаты кидай чек сюда — открою безлимит навсегда ✅")
         send_message(chat_id, msg)
-        return 'ok', 200
+        return response
 
-    # Groq запит
+    # Groq
     if not text:
-        return 'ok', 200
+        return response
 
     payload = {
         "model": "llama-3.1-70b-instant",
@@ -76,16 +78,16 @@ def webhook():
             "https://api.groq.com/openai/v1/chat/completions",
             json=payload,
             headers={"Authorization": f"Bearer {GROQ_API}"},
-            timeout=45
+            timeout=60
         )
         r.raise_for_status()
         answer = r.json()['choices'][0]['message']['content']
-    except Exception as e:
+    except:
         answer = "Сервер немного тормозит, попробуй через 30 секунд."
 
     final = answer + "\n\nБезлимит + закрытые связки — только в Pro за 10$/мес → /pro"
     send_message(chat_id, final)
-    return 'ok', 200
+    return response
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -98,7 +100,7 @@ def send_message(chat_id, text):
     try:
         requests.post(url, data=data, timeout=10)
     except:
-        pass  # Не падаємо на помилках відправки
+        pass
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
